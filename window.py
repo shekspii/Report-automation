@@ -1,24 +1,49 @@
 import customtkinter as ctk
 from ctkdateentry import CTkDateEntry, CTkStringVar
-from my_tools import draw_dates
+from my_tools import draw_dates, draw_holidays
 from datetime import datetime, date
 
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.geometry("300x100")
+        self.geometry("300x450")
         self.title("Автоматизация отчётности")
 
         self.input_date = CTkStringVar(self, value = "Введите первый день квартала")
         self.input_date.trace_add("write", self.check_another_value_of_date_input)
+
         self.calendar = CTkDateEntry(self, variable = self.input_date, width=240)
         self.calendar.pack(pady=10, padx=10)
-        
 
+        self.scroll_frame = ctk.CTkScrollableFrame(self, width=280, height=250, label_text="Выберите выходные дни")
+        self.scroll_frame.pack(fill="both", expand=True, pady=10, padx=10)
+
+        self.checkboxes = {}
+
+        self.button = ctk.CTkButton(self, text="Заполнить выходные дни", command=self.scroll_button)
+        self.button.pack(pady=10)
+        
+    def scroll_button(self):
+        selected = [d for d, var in self.checkboxes.items() if var.get()]
+        draw_holidays(selected)
+    
     def date_button(self, *args):
         chosen_date = self.input_date.get()
-        draw_dates(chosen_date)
+        days = draw_dates(chosen_date)
+        self.update_scroll_bar(days)
+
+    def update_scroll_bar(self, days):
+        for i, dat in enumerate(days):
+            var = ctk.BooleanVar(value=False)
+            one_date = ctk.CTkCheckBox(
+                self.scroll_frame,
+                text=dat.strftime("%d.%m.%Y (%a)"),
+                variable=var 
+            )
+            one_date.grid(row=i, column=0, sticky="w", pady=2)
+            self.checkboxes[dat] = var
+
 
     def check_another_value_of_date_input(self, *args):
         current_value = self.input_date.get()
