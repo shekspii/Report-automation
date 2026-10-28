@@ -1,13 +1,15 @@
 import customtkinter as ctk
 from ctkdateentry import CTkDateEntry, CTkStringVar
-from my_tools import draw_dates, draw_holidays
+from my_tools import draw_dates, draw_holidays, word_to_excel
 from datetime import datetime, date
+from tkinterdnd2 import TkinterDnD, DND_FILES
 
-class App(ctk.CTk):
+class App(ctk.CTk,  TkinterDnD.DnDWrapper):
     def __init__(self):
         super().__init__()
 
-        self.geometry("300x450")
+        self.TkdndVersion = TkinterDnD._require(self)
+        self.geometry("500x750")
         self.title("Автоматизация отчётности")
 
         self.input_date = CTkStringVar(self, value = "Введите первый день квартала")
@@ -23,7 +25,24 @@ class App(ctk.CTk):
 
         self.button = ctk.CTkButton(self, text="Заполнить выходные дни", command=self.scroll_button)
         self.button.pack(pady=10)
-        
+
+        self.drop_area = ctk.CTkLabel(
+            self, 
+            text="Перетащите Word-файл за квартал сюда",
+            fg_color="gray20",
+            corner_radius=10,
+            height=100
+        )
+        self.drop_area.pack(fill="x", padx=20, pady=20)
+
+        self.drop_area.drop_target_register(DND_FILES)
+        self.drop_area.dnd_bind("<<Drop>>", self.on_file_drop)
+
+    def on_file_drop(self, event):
+        file_path = self.tk.splitlist(event.data)[0]
+        self.drop_area.configure(text=f"Загружен: {file_path}")
+        word_to_excel(file_path)
+       
     def scroll_button(self):
         selected = [d for d, var in self.checkboxes.items() if var.get()]
         draw_holidays(selected)
