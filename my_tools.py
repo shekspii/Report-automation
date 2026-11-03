@@ -3,10 +3,13 @@ from datetime import date, datetime, timedelta
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
 from docx import Document
-import random
+import random, shutil
+from pathlib import Path
+from platformdirs import user_desktop_dir
 
 black_fill = PatternFill(fill_type="solid", fgColor="000000")
 holidays_all = 0
+
 
 def word_to_excel(number, path):
     doc = Document(path)
@@ -16,6 +19,7 @@ def word_to_excel(number, path):
         data.append([cell.text for cell in rows.cells])
     df = pd.DataFrame(data[1:], columns=data[0])
     df.to_excel(f"data/samples/tz{number}.xlsx", index=False)
+
 
 def draw_dates(first_day_str):
     first_day = datetime.strptime(first_day_str, "%d/%m/%Y").date()
@@ -36,6 +40,14 @@ def draw_dates(first_day_str):
 
     wb.save("data/output/test.xlsx")
     return dates
+
+def return_all_days():
+    path = "data/output/test.xlsx"
+    wb = load_workbook(path)
+    pos = wb["Посещения"]
+
+    dates = [pos[f"A{i}"].value for i in range(5, 97)]
+    return [d for d in dates if d is not None]
 
 def draw_holidays(selected):
     global holidays_all
@@ -61,7 +73,7 @@ def fill_rows(sheet, selected, black_fill, start_row=5, end_row=97, max_col=27):
         value_date = value.date() if hasattr(value, "date") else value
 
         if value_date in selected:
-            for c in sheet.iter_rows(min_row=row, max_row=row, min_col=1, max_col=max_col):
+            for c in sheet.iter_rows(min_row=row, max_row=row, min_col=2, max_col=max_col):
                 for x in c:
                     x.fill = black_fill
                     x.value = 0       
@@ -199,6 +211,7 @@ def center():
     insert_into_collumn(6, 'W', knig, young_humans_consultations)
 
     wb.save(path_to_doc)
+    copy_to_desktop(path_to_doc)
 
 
 def insert_into_collumn(first_row_index, column, sheet, list_of_values):
@@ -208,6 +221,26 @@ def insert_into_collumn(first_row_index, column, sheet, list_of_values):
         if sheet[cell_adress].value != 0:
             sheet[cell_adress] = (sheet[cell_adress].value or 0) + list_of_values[index]
             index += 1
+
+def copy_from_column(first_row_index, last_row_index, column, sheet):
+
+    count = 0
+    for i in range(first_row_index, last_row_index + 1):
+        cell_adress = f"{column}{i}"
+        count += sheet[cell_adress].value
+
+    return count
+
+def copy_to_desktop(source_path: str):
+    source = Path(source_path)
+    if not source.exists():
+        print(f"Файл не найден: {source}")
+        return
+
+    desktop = Path(user_desktop_dir())
+
+    destination = desktop / source.name
+    shutil.copy2(source, destination)
 
 def clear_data():
     path = "data/samples/scan.xlsx"
