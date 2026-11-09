@@ -3,12 +3,13 @@ from datetime import date, datetime, timedelta
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
 from docx import Document
-import random, shutil
+import random, shutil, numpy, json
 from pathlib import Path
 from platformdirs import user_desktop_dir
 
 black_fill = PatternFill(fill_type="solid", fgColor="000000")
 holidays_all = 0
+JSON_PATH = Path("data/samples/events_counter.json")
 
 
 def word_to_excel(number, path):
@@ -79,12 +80,11 @@ def fill_rows(sheet, selected, black_fill, start_row=5, end_row=97, max_col=27):
                     x.value = 0       
 
 
-def list_of_values(numb):
+def list_of_values(numb, max_iterations=91):
 
     list_before_delta = []
     global holidays_all
-    iterations = 91 - holidays_all
-    # print(holidays_all, iterations, numb, holidays_all)
+    iterations = max_iterations - holidays_all
     mu = numb / iterations 
     sigma = mu * 0.3
 
@@ -111,8 +111,22 @@ def list_of_values(numb):
             else:
                 list_before_delta[cell_index] -= 1
                 delta += 1
-
+    print(len(list_before_delta))
     return list_before_delta
+
+def make_sorted_random_array(list_len : int, pos):
+    valid_indexes = []
+
+    for i in range(0, 92):
+        cell_address = f"B{i + 5}"
+        cell_value = pos[cell_address].value
+        if cell_value != 0 and cell_value is not None:
+            valid_indexes.append(i)
+
+    indexes_array = numpy.random.choice(valid_indexes, size=list_len, replace=False)
+    indexes_array.sort()
+    return indexes_array
+
 
 def center():
     path_to_doc = "data/output/test.xlsx"
@@ -177,21 +191,33 @@ def center():
     insert_into_collumn(5, 'T', pos, request_of_delete_users)
 
     # "Количество посещений библиотечных мероприятий всего"
-    all_visits_in_events = list_of_values(int(tz['D22'].value))
-    insert_into_collumn(5, 'U', pos, all_visits_in_events)
+    
+    global holidays_all
+    list_len = int(tz['D19'].value) + holidays_all
+    len_min_events = int(tz["D21"].value) + holidays_all
+
+    indexes_array = make_sorted_random_array(list_len, pos)
+    min_indexes_array = numpy.random.choice(indexes_array, size=len_min_events, replace=False)
+
+    if JSON_PATH.exists():
+        JSON_PATH.unlink() 
+
+    all_visits_in_events = list_of_values(int(tz['D22'].value), list_len)
+    random_insert_into_collumn(5, 'U', pos, all_visits_in_events, indexes_array, True)
 
     # Число посещений с мероприятий детям до 14 лет
-    events_human_14_visits = list_of_values(int(tz['D24'].value))
-    insert_into_collumn(5, 'X', pos, events_human_14_visits)
+    events_human_14_visits = list_of_values(int(tz['D24'].value), len_min_events)
+    random_insert_into_collumn(5, 'X', pos, events_human_14_visits, min_indexes_array, True, True)
 
     # 15-17
     for_other_ages = (int(tz['D22'].value) - int(tz['D24'].value)) // 2
-    events_young_humans_visits = list_of_values(for_other_ages)
-    insert_into_collumn(5, 'Y', pos, events_young_humans_visits)
+
+    events_young_humans_visits = list_of_values(for_other_ages, list_len)
+    random_insert_into_collumn(5, 'Y', pos, events_young_humans_visits, indexes_array)
 
     # 18-35
-    events_mid_humans_visits = list_of_values(for_other_ages)
-    insert_into_collumn(5, 'Z', pos, events_mid_humans_visits)
+    events_mid_humans_visits = list_of_values(for_other_ages, list_len)
+    random_insert_into_collumn(5, 'Z', pos, events_mid_humans_visits, indexes_array)
 
     # ОМиЭР
     # Всего
@@ -214,13 +240,49 @@ def center():
     copy_to_desktop(path_to_doc)
 
 
-def insert_into_collumn(first_row_index, column, sheet, list_of_values):
+def insert_into_collumn(first_row_index, column, sheet, list_of_values, list_len=91):
     index = 0
-    for i in range(91):
+    for i in range(list_len):
         cell_adress = f"{column}{i + first_row_index}"
         if sheet[cell_adress].value != 0:
             sheet[cell_adress] = (sheet[cell_adress].value or 0) + list_of_values[index]
             index += 1
+
+
+def random_insert_into_collumn(first_row_index, column, sheet, list_of_values, indexes_array, is_log=False, is_min=False):
+    index = 0
+    try:
+        with open(JSON_PATH, "r", encoding="utf-8") as f:
+            events = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        events = {}
+
+    for i in indexes_array:
+        cell_adress = f"{column}{i + first_row_index}"
+        cell_value = sheet[cell_adress].value
+        if index >= len(list_of_values):
+            break
+        new_value = list_of_values[index]
+        sheet[cell_adress] = (cell_value or 0) + new_value
+        if is_log:
+            date_cell = sheet[f"A{i + first_row_index}"].value
+            if hasattr(date_cell, "strftime"):
+                date_key = date_cell.strftime("%Y-%m-%d")
+            else:
+                date_key = str(date_cell)
+
+            events.setdefault(date_key, []).append({
+                "is_min": is_min,   
+                "count": new_value,
+            })
+
+            
+
+        index += 1
+
+    JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(JSON_PATH, "w", encoding="utf-8") as f:
+        json.dump(events, f, ensure_ascii=False, indent=2)
 
 def copy_from_column(first_row_index, last_row_index, column, sheet):
 
@@ -230,6 +292,107 @@ def copy_from_column(first_row_index, last_row_index, column, sheet):
         count += sheet[cell_adress].value
 
     return count
+
+def get_from_json(start, end, is_min : bool):
+    with open(JSON_PATH, "r", encoding="utf-8") as file:
+        events = json.load(file)
+    start_str = start.strftime("%Y-%m-%d") if hasattr(start, "strftime") else str(start)
+    end_str = end.strftime("%Y-%m-%d") if hasattr(end, "strftime") else str(end)
+
+    result = []
+    for date_key, items in events.items():
+        if start_str <= date_key <= end_str:
+            result.extend(items)
+    count = 0
+    len = 0
+    if not is_min:
+        count = sum(e["count"] for e in result if not e["is_min"])
+        len = sum(1 for e in result if not e["is_min"])
+    else:
+        count = sum(e["count"] for e in result if e["is_min"])
+        len = sum(1 for e in result if e["is_min"])
+
+    return count, len
+
+
+def find_row_by_value(sheet, target, first_row=5, last_row=97):
+    for i in range(first_row, last_row):
+        cell = sheet.cell(row=i, column=1)
+        if cell.value == target:
+            return cell.row
+    return None
+
+def make_month_report(selected : list):
+    print("Work!! ")
+    path_to_doc = "data/output/test.xlsx"
+    path_to_report = "data/samples/month_report.docx"
+    path_to_tz = "data/samples/tz0.xlsx"
+    
+    wb = load_workbook(path_to_doc)
+    tzwb = load_workbook(path_to_tz)
+
+    pos = wb["Посещения"]
+    knig = wb["Книгов"]
+    tz = tzwb.active
+
+    first_day = selected[0]
+    last_day = selected[1]
+
+    first_day_row_index = find_row_by_value(pos, first_day)
+    last_day_row_index = find_row_by_value(pos, last_day)
+
+    doc = Document(path_to_report)
+    table = doc.tables[0]
+
+    # Читатели – Посещения, столбец B, вновь поступившие. J, K, L
+    readers = copy_from_column(first_day_row_index, last_day_row_index, "B", pos) 
+    kids_readers = copy_from_column(first_day_row_index, last_day_row_index, "J", pos)
+    young_readers = copy_from_column(first_day_row_index, last_day_row_index, "K", pos)
+    mid_readers = copy_from_column(first_day_row_index, last_day_row_index, "L", pos)
+
+    table.cell(1, 1).text = str(readers)
+    table.cell(3, 1).text = str(kids_readers)
+    table.cell(4, 1).text = str(young_readers)
+    table.cell(5, 1).text = str(mid_readers)
+
+    # Посещения – Посещения, столбец U, Посещения. X.
+    visits = copy_from_column(first_day_row_index, last_day_row_index, "U", pos)
+    kids_visits = copy_from_column(first_day_row_index, last_day_row_index, "X", pos)
+
+    table.cell(7, 1).text = str(visits)
+    table.cell(9, 1).text = str(kids_visits)
+
+    # Книговыдача – Книгов, столбец B, кнв всего. L, M, N
+    book_lending = copy_from_column(first_day_row_index + 1, last_day_row_index + 1, "B", knig)
+    book_lending_kids = copy_from_column(first_day_row_index + 1, last_day_row_index + 1, "L", knig)
+    book_lending_youngs = copy_from_column(first_day_row_index + 1, last_day_row_index + 1, "M", knig)
+    book_lending_mid = copy_from_column(first_day_row_index + 1, last_day_row_index + 1, "N", knig)
+
+    table.cell(11, 1).text = str(book_lending)
+    table.cell(13, 1).text = str(book_lending_kids)
+    table.cell(14, 1).text = str(book_lending_youngs)
+    table.cell(15, 1).text = str(book_lending_mid)
+
+    # Массовые мероприятия – кол.во самих мероприятий, 34
+    # детям до 14 – кол.во детских мероприятий, 19
+
+    events_count, events_count_len = get_from_json(first_day, last_day, False)
+    child_events_count, child_events_count_len = get_from_json(first_day, last_day, True)
+
+    table.cell(17, 1).text = str(events_count_len)
+    table.cell(19, 1).text = str(child_events_count_len)
+    
+    table.cell(21, 1).text = str(events_count)
+    table.cell(23, 1).text = str(child_events_count)
+
+    # Обращения удаленных пользователей – Посещения, столбец T, Обращ. удал. польз.
+    requests_od_deleted_users = copy_from_column(first_day_row_index, last_day_row_index, "T", pos)
+    table.cell(25, 1).text = str(requests_od_deleted_users)
+
+
+    doc.save(path_to_report)
+
+#make_month_report([datetime(2026, 11, 13, 0, 0), datetime(2027, 2, 11, 0, 0)])
 
 def copy_to_desktop(source_path: str):
     source = Path(source_path)
@@ -243,12 +406,19 @@ def copy_to_desktop(source_path: str):
     shutil.copy2(source, destination)
 
 def clear_data():
-    path = "data/samples/scan.xlsx"
-    wb = load_workbook(path)
-
     path_test = "data/output/test.xlsx"
-    wbb = load_workbook(path_test)
+    wb = load_workbook(path_test)
+    pos = wb["Посещения"]
+    knig = wb["Книгов"]
 
-    wbb = wb
-    wbb.save(path_test)
-# clear_data()
+    if pos.max_row >= 5:
+        for row in pos.iter_rows(min_row=5, max_row=pos.max_row, min_col=2, max_col=pos.max_column):
+            for cell in row:
+                cell.value = None
+    if knig.max_row >= 6:
+        for row in knig.iter_rows(min_row=6, max_row=knig.max_row, min_col=2, max_col=knig.max_column):
+            for cell in row:
+                cell.value = None
+
+    wb.save(path_test)
+#clear_data()

@@ -1,6 +1,6 @@
 import customtkinter as ctk
 from ctkdateentry import CTkDateEntry, CTkStringVar
-from my_tools import draw_dates, draw_holidays, word_to_excel, return_all_days
+from my_tools import draw_dates, draw_holidays, word_to_excel, return_all_days, clear_data, make_month_report
 from datetime import datetime, date
 from tkinterdnd2 import TkinterDnD, DND_FILES
 import os, shutil
@@ -192,15 +192,18 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
             
        
     def scroll_button(self):
+        clear_data()
         selected = [d for d, var in self.checkboxes.items() if var.get()]
         draw_holidays(selected)
 
     def report_button(self):
         selected = [d for d, var in self.all_days_checkboxes.items() if var.get()]
+        
         if len(selected) != 2:
             messagebox.showwarning("Ошибка", "Выберите ровно два дня")
             return
-        # Вызов функции из my_tools.py которая используя {copy_from_column} заполняет месячный отчёт.
+        make_month_report(selected)
+        
     
     def date_button(self, *args):
         chosen_date = self.input_date.get()
@@ -208,6 +211,10 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         self.update_scroll_bar(days, self.checkboxes, self.scroll_frame)
 
     def update_scroll_bar(self, days, checkboxes, frame):
+        checkboxes.clear()
+        for widget in frame.winfo_children():
+            widget.destroy()
+            
         for i, dat in enumerate(days):
             var = ctk.BooleanVar(value=False)
             one_date = ctk.CTkCheckBox(
