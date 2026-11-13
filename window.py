@@ -1,6 +1,6 @@
 import customtkinter as ctk
 from ctkdateentry import CTkDateEntry, CTkStringVar
-from my_tools import draw_dates, draw_holidays, word_to_excel, return_all_days, clear_data, make_month_report
+from my_tools import draw_dates, draw_holidays, word_to_excel, return_all_days, clear_data, make_month_report, base
 from datetime import datetime, date
 from tkinterdnd2 import TkinterDnD, DND_FILES
 import os, shutil
@@ -9,7 +9,7 @@ from pathlib import Path
 from tkinter import messagebox
 
 EXCEL_EXTENSIONS = (".xlsx", ".xlsm", ".xltx", ".xltm")
-TARGET_PATH = Path("data/output/test.xlsx")
+TARGET_PATH = base / "data" / "output" / "test.xlsx"
 
 class App(ctk.CTk, TkinterDnD.DnDWrapper):
     def __init__(self):

@@ -3,14 +3,18 @@ from datetime import date, datetime, timedelta
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
 from docx import Document
-import random, shutil, numpy, json
+import random, shutil, numpy, json, sys
 from pathlib import Path
-from platformdirs import user_desktop_dir
+from platformdirs import user_desktop_dir, user_documents_path
 
 black_fill = PatternFill(fill_type="solid", fgColor="000000")
 holidays_all = 0
-JSON_PATH = Path("data/samples/events_counter.json")
 
+base = user_documents_path() / "ReportAutomation"
+base.mkdir(parents=True, exist_ok=True)
+
+JSON_PATH = base / "data" / "samples" / "events_counter.json"
+JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 def word_to_excel(number, path):
     doc = Document(path)
@@ -19,12 +23,21 @@ def word_to_excel(number, path):
     for rows in table.rows:
         data.append([cell.text for cell in rows.cells])
     df = pd.DataFrame(data[1:], columns=data[0])
-    df.to_excel(f"data/samples/tz{number}.xlsx", index=False)
 
+    out_dir = base / "data" / "samples"
+    out_dir.mkdir(parents=True, exist_ok=True)      
+    out_path = out_dir / f"tz{number}.xlsx"
+
+    df.to_excel(out_path, index=False)
+
+def resource_path(relative):
+    if hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS) / relative
+    return Path(__file__).resolve().parent / relative
 
 def draw_dates(first_day_str):
     first_day = datetime.strptime(first_day_str, "%d/%m/%Y").date()
-    path = "data/samples/scan.xlsx"
+    path = resource_path("data/samples/scan.xlsx")
     wb = load_workbook(path)
     pos = wb["Посещения"]
     knig = wb["Книгов"]  
@@ -39,11 +52,15 @@ def draw_dates(first_day_str):
         b = knig.cell(row = 6 + i, column = 1, value = dat)
         b.number_format = "DD MMMM YYYY"
 
-    wb.save("data/output/test.xlsx")
+    out_dir = base / "data" / "output"
+    out_dir.mkdir(parents=True, exist_ok=True)      
+    out_path = out_dir / "test.xlsx"
+
+    wb.save(out_path)
     return dates
 
 def return_all_days():
-    path = "data/output/test.xlsx"
+    path = base / "data" / "output" / "test.xlsx"
     wb = load_workbook(path)
     pos = wb["Посещения"]
 
@@ -54,13 +71,13 @@ def draw_holidays(selected):
     global holidays_all
     holidays_all = len(selected)
 
-    path = "data/output/test.xlsx"
+    path = base / "data" / "output" / "test.xlsx"
     wb = load_workbook(path)
 
     fill_rows(wb["Посещения"], selected, black_fill)
     fill_rows(wb["Книгов"], selected, black_fill, start_row=6, max_col=25) 
 
-    wb.save("data/output/test.xlsx")
+    wb.save(path)
 
     center()
 
@@ -129,9 +146,9 @@ def make_sorted_random_array(list_len : int, pos):
 
 
 def center():
-    path_to_doc = "data/output/test.xlsx"
-    path_to_tz = "data/samples/tz0.xlsx"
-    path_to_tz1 = "data/samples/tz1.xlsx"
+    path_to_doc = base / "data" / "output" / "test.xlsx"
+    path_to_tz = base / "data" / "samples" / "tz0.xlsx"
+    path_to_tz1 = base / "data" / "samples" / "tz1.xlsx"
 
     wb = load_workbook(path_to_doc)
     pos = wb["Посещения"]
@@ -323,17 +340,16 @@ def find_row_by_value(sheet, target, first_row=5, last_row=97):
     return None
 
 def make_month_report(selected : list):
-    print("Work!! ")
-    path_to_doc = "data/output/test.xlsx"
-    path_to_report = "data/samples/month_report.docx"
-    path_to_tz = "data/samples/tz0.xlsx"
+    #print("Work!! ")
+    path_to_doc = base / "data" / "output" / "test.xlsx"
+    path_to_report = resource_path("data/samples/month_report.docx")
+    path_to_tz = base / "data" / "samples" / "tz0.xlsx"
     
     wb = load_workbook(path_to_doc)
     tzwb = load_workbook(path_to_tz)
 
     pos = wb["Посещения"]
     knig = wb["Книгов"]
-    tz = tzwb.active
 
     first_day = selected[0]
     last_day = selected[1]
@@ -390,11 +406,11 @@ def make_month_report(selected : list):
     table.cell(25, 1).text = str(requests_od_deleted_users)
 
 
-    doc.save(path_to_report)
+    doc.save(base / "data" / "samples" / "month_report.docx")
 
 #make_month_report([datetime(2026, 11, 13, 0, 0), datetime(2027, 2, 11, 0, 0)])
 
-def copy_to_desktop(source_path: str):
+def copy_to_desktop(source_path):
     source = Path(source_path)
     if not source.exists():
         print(f"Файл не найден: {source}")
@@ -406,7 +422,7 @@ def copy_to_desktop(source_path: str):
     shutil.copy2(source, destination)
 
 def clear_data():
-    path_test = "data/output/test.xlsx"
+    path_test = base / "data" / "output" / "test.xlsx"
     wb = load_workbook(path_test)
     pos = wb["Посещения"]
     knig = wb["Книгов"]
