@@ -44,12 +44,14 @@ def draw_dates(first_day_str):
     pos.column_dimensions['A'].width = 22
     knig.column_dimensions['A'].width = 22
 
-    dates = [first_day + timedelta(days=i) for i in range(91)]
+    dates = {}          
+    for i in range(91):
+        dat = first_day + timedelta(days=i)
+        dates[dat] = 1 if (dat.weekday() == 5 or dat.day == 15) else 0
 
-    for i, dat in enumerate(dates):
-        с = pos.cell(row = 5 + i, column = 1, value = dat)
-        с.number_format = "DD MMMM YYYY"
-        b = knig.cell(row = 6 + i, column = 1, value = dat)
+        c = pos.cell(row=5 + i, column=1, value=dat)
+        c.number_format = "DD MMMM YYYY"
+        b = knig.cell(row=6 + i, column=1, value=dat)
         b.number_format = "DD MMMM YYYY"
 
     out_dir = base / "data" / "output"
@@ -128,7 +130,6 @@ def list_of_values(numb, max_iterations=91):
             else:
                 list_before_delta[cell_index] -= 1
                 delta += 1
-    print(len(list_before_delta))
     return list_before_delta
 
 def make_sorted_random_array(list_len : int, pos):

@@ -215,8 +215,8 @@ class App(ctk.CTk, TkinterDnD.DnDWrapper):
         for widget in frame.winfo_children():
             widget.destroy()
             
-        for i, dat in enumerate(days):
-            var = ctk.BooleanVar(value=False)
+        for i, (dat, flag) in enumerate(days.items()):
+            var = ctk.BooleanVar(value=bool(flag))
             one_date = ctk.CTkCheckBox(
                 frame,
                 text=dat.strftime("%d.%m.%Y (%a)"),
