@@ -66,8 +66,14 @@ def return_all_days():
     wb = load_workbook(path)
     pos = wb["Посещения"]
 
-    dates = [pos[f"A{i}"].value for i in range(5, 97)]
-    return [d for d in dates if d is not None]
+    dates = {}
+    for i in range(5, 97):
+        value = pos[f"A{i}"].value
+        if value is None:
+            continue
+        dates[value] = 0
+        
+    return dates
 
 def draw_holidays(selected):
     global holidays_all
@@ -408,6 +414,7 @@ def make_month_report(selected : list):
 
 
     doc.save(base / "data" / "samples" / "month_report.docx")
+    copy_to_desktop(base / "data" / "samples" / "month_report.docx")
 
 #make_month_report([datetime(2026, 11, 13, 0, 0), datetime(2027, 2, 11, 0, 0)])
 
