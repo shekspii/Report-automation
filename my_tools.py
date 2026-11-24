@@ -231,7 +231,7 @@ def center():
         JSON_PATH.unlink() 
 
     events_human_14_visits = list_of_values(int(tz['D24'].value), len_min_events)
-    all_visits_in_events = list_of_values(int(tz['D22'].value), len_for_ev_all, True, events_human_14_visits)
+    all_visits_in_events = list_of_values(int(tz['D22'].value) - int(tz['D24'].value), len_for_ev_all, True, events_human_14_visits)
     random_insert_into_collumn(5, 'U', pos, all_visits_in_events, indexes_array1, True)
 
     # Число посещений с мероприятий детям до 14 лет
@@ -335,7 +335,7 @@ def get_from_json(start, end, is_min : bool):
     count = 0
     len = 0
     if not is_min:
-        count = sum(e["count"] for e in result if not e["is_min"])
+        count = sum(e["count"] for e in result)
         len = sum(1 for e in result)
     else:
         count = sum(e["count"] for e in result if e["is_min"])
