@@ -105,13 +105,12 @@ def fill_rows(sheet, selected, black_fill, start_row=5, end_row=97, max_col=27):
                     x.value = 0       
 
 
-def list_of_values(numb, max_iterations=91):
-
-    list_before_delta = []
+def list_of_values(numb, max_iterations=91, is_max=False, min_list : list | None = None):
     global holidays_all
     iterations = max_iterations - holidays_all
     mu = numb / iterations 
     sigma = mu * 0.3
+    list_before_delta = []
 
     for i in range(iterations):
         float_value = random.gauss(mu, sigma)
@@ -136,6 +135,7 @@ def list_of_values(numb, max_iterations=91):
             else:
                 list_before_delta[cell_index] -= 1
                 delta += 1
+
     return list_before_delta
 
 def make_sorted_random_array(list_len : int, pos):
@@ -219,29 +219,33 @@ def center():
     global holidays_all
     list_len = int(tz['D19'].value) + holidays_all
     len_min_events = int(tz["D21"].value) + holidays_all
+    len_lohs = (list_len - len_min_events) // 2 + holidays_all
+    len_for_ev_all = list_len-len_min_events + holidays_all
 
-    indexes_array = make_sorted_random_array(list_len, pos)
-    min_indexes_array = numpy.random.choice(indexes_array, size=len_min_events, replace=False)
+    indexes_array = make_sorted_random_array(int(tz['D19'].value), pos)
+    indexes_array1 = numpy.random.choice(indexes_array, size=int(tz['D19'].value) - int(tz['D21'].value), replace=False)
+    min_indexes_array = numpy.random.choice(indexes_array, size=int(tz['D21'].value), replace=False)
+    lohs_indexes_array = numpy.random.choice(indexes_array, size=len_lohs, replace=False)
 
     if JSON_PATH.exists():
         JSON_PATH.unlink() 
 
-    all_visits_in_events = list_of_values(int(tz['D22'].value), list_len)
-    random_insert_into_collumn(5, 'U', pos, all_visits_in_events, indexes_array, True)
+    events_human_14_visits = list_of_values(int(tz['D24'].value), len_min_events)
+    all_visits_in_events = list_of_values(int(tz['D22'].value), len_for_ev_all, True, events_human_14_visits)
+    random_insert_into_collumn(5, 'U', pos, all_visits_in_events, indexes_array1, True)
 
     # Число посещений с мероприятий детям до 14 лет
-    events_human_14_visits = list_of_values(int(tz['D24'].value), len_min_events)
     random_insert_into_collumn(5, 'X', pos, events_human_14_visits, min_indexes_array, True, True)
 
     # 15-17
     for_other_ages = (int(tz['D22'].value) - int(tz['D24'].value)) // 2
 
-    events_young_humans_visits = list_of_values(for_other_ages, list_len)
-    random_insert_into_collumn(5, 'Y', pos, events_young_humans_visits, indexes_array)
+    events_young_humans_visits = list_of_values(for_other_ages, len_lohs)
+    random_insert_into_collumn(5, 'Y', pos, events_young_humans_visits, lohs_indexes_array)
 
     # 18-35
-    events_mid_humans_visits = list_of_values(for_other_ages, list_len)
-    random_insert_into_collumn(5, 'Z', pos, events_mid_humans_visits, indexes_array)
+    events_mid_humans_visits = list_of_values(for_other_ages, len_lohs)
+    random_insert_into_collumn(5, 'Z', pos, events_mid_humans_visits, lohs_indexes_array)
 
     # ОМиЭР
     # Всего
@@ -262,6 +266,7 @@ def center():
 
     wb.save(path_to_doc)
     copy_to_desktop(path_to_doc)
+    make_txt_report()
 
 
 def insert_into_collumn(first_row_index, column, sheet, list_of_values, list_len=91):
@@ -287,7 +292,7 @@ def random_insert_into_collumn(first_row_index, column, sheet, list_of_values, i
         if index >= len(list_of_values):
             break
         new_value = list_of_values[index]
-        sheet[cell_adress] = (cell_value or 0) + new_value
+        
         if is_log:
             date_cell = sheet[f"A{i + first_row_index}"].value
             if hasattr(date_cell, "strftime"):
@@ -299,8 +304,8 @@ def random_insert_into_collumn(first_row_index, column, sheet, list_of_values, i
                 "is_min": is_min,   
                 "count": new_value,
             })
-
-            
+        else:
+            sheet[cell_adress] = (cell_value or 0) + new_value
 
         index += 1
 
@@ -331,13 +336,42 @@ def get_from_json(start, end, is_min : bool):
     len = 0
     if not is_min:
         count = sum(e["count"] for e in result if not e["is_min"])
-        len = sum(1 for e in result if not e["is_min"])
+        len = sum(1 for e in result)
     else:
         count = sum(e["count"] for e in result if e["is_min"])
         len = sum(1 for e in result if e["is_min"])
 
     return count, len
 
+def make_txt_report():
+    try:
+        with open(JSON_PATH, "r", encoding="utf-8") as f:
+            events = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        events = {}
+
+    out_path = base / "data" / "output" / "events_report.txt"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(out_path, "w", encoding="utf-8") as f:
+        for date_key, items in sorted(events.items()):
+            try:
+                dt = datetime.strptime(date_key, "%Y-%m-%d")
+                date_str = dt.strftime("%d.%m.%Y")
+            except ValueError:
+                date_str = date_key  
+
+            for item in items:
+                is_min = item.get("is_min", False)
+                count = item.get("count", 0)
+
+                event_type = "Детское" if is_min else "Взрослое"
+
+                line = f"{date_str} — {event_type} — Пришло: {count} чел.\n"
+                f.write(line)
+
+    copy_to_desktop(out_path)
+    
 
 def find_row_by_value(sheet, target, first_row=5, last_row=97):
     for i in range(first_row, last_row):
