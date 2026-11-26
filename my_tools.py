@@ -151,6 +151,175 @@ def make_sorted_random_array(list_len : int, pos):
     indexes_array.sort()
     return indexes_array
 
+def normalization(main_data: list, lists: list[list]):
+    # Работаем с копией главного списка, чтобы не мутировать его случайно
+    # (если нужно менять исходный, уберите [:])
+    res_main = main_data[:]
+    
+    n = len(res_main)
+    
+    # Считаем, сколько всего данных в зависимых списках (они неизменны)
+    # и сколько в главном
+    total_lists_sum = sum(sum(lst) for lst in lists)
+    total_main_sum = sum(res_main)
+    
+    if total_lists_sum > total_main_sum:
+        raise ValueError("Невозможно распределить данные: общая сумма зависимых списков больше, чем сумма главного списка.")
+
+    def col_sum(idx):
+        return sum(lst[idx] for lst in lists)
+
+    # Шаг 1: Находим дефицитные и профицитные индексы
+    deficits = []  # (индекс, сколько не хватает)
+    excesses = []  # (индекс, сколько можно забрать)
+    
+    for i in range(n):
+        current_sum = col_sum(i)
+        if current_sum > res_main[i]:
+            deficits.append((i, current_sum - res_main[i]))
+        elif res_main[i] > current_sum:
+            excesses.append((i, res_main[i] - current_sum))
+
+    # Шаг 2: Переливаем значения из профицитных индексов в дефицитные
+    # Работаем с копиями списков кортежей, чтобы не запутаться с индексами
+    d_idx = 0
+    e_idx = 0
+    
+    while d_idx < len(deficits) and e_idx < len(excesses):
+        d_i, d_val = deficits[d_idx]
+        e_i, e_val = excesses[e_idx]
+        
+        # Сколько можем перекинуть за один шаг
+        transfer = min(d_val, e_val)
+        
+        # Увеличиваем главный список в дефицитном индексе
+        res_main[d_i] += transfer
+        # Уменьшаем главный список в профицитном индексе
+        res_main[e_i] -= transfer
+        
+        # Обновляем остатки
+        deficits[d_idx] = (d_i, d_val - transfer)
+        excesses[e_idx] = (e_i, e_val - transfer)
+        
+        # Если дефицит закрыт — переходим к следующему
+        if deficits[d_idx][1] == 0:
+            d_idx += 1
+        # Если профицит исчерпан — переходим к следующему
+        if excesses[e_idx][1] == 0:
+            e_idx += 1
+
+    # Возвращаем в том же порядке: сначала (измененный) main_data, затем исходные lists
+    return res_main, lists
+
+def reverse_normalization(main_data: list, lists: list[list]):
+    # Работаем с копиями, чтобы не мутировать исходные данные
+    res_lists = [lst[:] for lst in lists]
+    n = len(main_data)
+
+    def col_sum(idx):
+        return sum(lst[idx] for lst in res_lists)
+
+    # 1. Находим все дефицитные индексы
+    deficits = []
+    for i in range(n):
+        current_sum = col_sum(i)
+        if current_sum < main_data[i]:
+            deficits.append([i, main_data[i] - current_sum]) # [индекс, сколько нужно добрать]
+
+    # 2. Проходим по каждому дефициту и ищем, откуда взять числа
+    for d_i, need in deficits:
+        # Ищем профицитные индексы
+        for e_i in range(n):
+            if need == 0:
+                break
+            if e_i == d_i:
+                continue
+            
+            current_e_sum = col_sum(e_i)
+            
+            # Если в этом индексе у зависимых списков есть числа,
+            # и мы можем их забрать (например, там в main_data 0, или сумма с избытком)
+            if current_e_sum > 0 and (main_data[e_i] == 0 or current_e_sum > main_data[e_i]):
+                
+                # Проходим по каждому зависимому списку
+                for lst in res_lists:
+                    if need == 0:
+                        break
+                    
+                    # Сколько можем забрать из этого конкретного списка в этом индексе
+                    # (забираем минимум из того, что есть в списке, и того, сколько нужно)
+                    take = min(lst[e_i], need)
+                    
+                    if take > 0:
+                        lst[e_i] -= take  # Убираем из профицитного индекса
+                        lst[d_i] += take  # Добавляем в дефицитный
+                        need -= take
+
+    return main_data, res_lists
+
+
+def parse_events_json(pos):
+    # 1. Загружаем JSON
+    try:
+        with open(JSON_PATH, "r", encoding="utf-8") as f:
+            events = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        events = {}
+
+    # 2. Сортируем даты (хотя для поиска по ключу это не обязательно, 
+    # но полезно, если выводить их на печать для проверки)
+    sorted_dates = sorted(events.keys())
+
+    # 3. Готовим списки
+    adults_list = []
+    children_list = []
+
+    # 4. Идем по датам в Excel с шагом 91
+    for i in range(91):
+        cell_value = pos[f"A{5 + i}"].value
+        b_value = pos[f"B{5 + i}"].value
+        
+        if b_value is None:
+            # Если ячейка пустая, пишем нули
+            adults_list.append(0)
+            children_list.append(0)
+            continue
+        elif b_value == 0:
+                continue
+        # Приводим дату из Excel к формату ключа JSON ("YYYY-MM-DD")
+        if hasattr(cell_value, "strftime"):
+            date_key = cell_value.strftime("%Y-%m-%d")
+        else:
+            # Если вдруг в ячейке строка, пытаемся её распарсить
+            try:
+                dt = datetime.strptime(str(cell_value).split()[0], "%d.%m.%Y") # или другой формат
+                date_key = dt.strftime("%Y-%m-%d")
+            except:
+                date_key = str(cell_value)
+
+        # 5. Проверяем, есть ли эта дата в JSON
+        if date_key in events:
+            day_events = events[date_key]
+            
+            # Инициализируем нулями на случай, если в этот день только одно мероприятие
+            adult_count = 0
+            child_count = 0
+
+            # Проходим по всем мероприятиям этого дня
+            for item in day_events:
+                if item.get("is_min") is False:
+                    adult_count = item.get("count", 0)
+                elif item.get("is_min") is True:
+                    child_count = item.get("count", 0)
+
+            adults_list.append(adult_count)
+            children_list.append(child_count)
+        else:
+            # Даты нет в JSON — пишем нули в оба списка
+            adults_list.append(0)
+            children_list.append(0)
+
+    return adults_list, children_list
 
 def center():
     path_to_doc = base / "data" / "output" / "test.xlsx"
@@ -170,82 +339,106 @@ def center():
     ## Число пользователей
     # - обслуженных в стационарных условиях 
     all_users = list_of_values(int(tz['E2'].value))
-    insert_into_collumn(5, 'B', pos, all_users)
+    human_14 = list_of_values(int(tz['E3'].value))
+    young_humans = list_of_values(int(tz['E4'].value))
+    mid_humans = list_of_values(int(tz['E5'].value))
+
+    fix_all_users, fix_others_guys = normalization(all_users, [human_14, young_humans, mid_humans])
+
+    insert_into_collumn(5, 'B', pos, fix_all_users)
 
     # - дети до 14 лет включительно
-    human_14 = list_of_values(int(tz['E3'].value))
-    insert_into_collumn(5, 'J', pos, human_14)
+    insert_into_collumn(5, 'J', pos, fix_others_guys[0])
 
     # "- молодежь 15-17 лет"
-    young_humans = list_of_values(int(tz['E4'].value))
-    insert_into_collumn(5, 'K', pos, young_humans)
+    insert_into_collumn(5, 'K', pos, fix_others_guys[1])
 
     # "- молодежь18-35 лет"
-    mid_humans = list_of_values(int(tz['E5'].value))
-    insert_into_collumn(5, 'L', pos, mid_humans)
+    insert_into_collumn(5, 'L', pos, fix_others_guys[2])
 
     ## Общее кол-во книговыдач за отчетный период
     # -в стационарных условиях 
     all_books = list_of_values(int(tz['E8'].value))
-    insert_into_collumn(6, 'B', knig, all_books)
+    for_human_14_books = list_of_values(int(tz['E9'].value))
+    for_young_humans_books = list_of_values(int(tz['E10'].value))
+    for_mid_humans_books = list_of_values(int(tz['E11'].value))
+
+    fix_all_books, fix_other_books = normalization(all_books, [for_human_14_books, for_young_humans_books, for_mid_humans_books])
+
+    # Вновь поступившие
+    insert_into_collumn(6, 'B', knig, fix_all_books)
 
     # -детям до 14 лет включительно
-    for_human_14_books = list_of_values(int(tz['E9'].value))
-    insert_into_collumn(6, 'L', knig, for_human_14_books)
+    insert_into_collumn(6, 'L', knig, fix_other_books[0])
 
     # "-молодежи 15-17 лет"
-    for_young_humans_books = list_of_values(int(tz['E10'].value))
-    insert_into_collumn(6, 'M', knig, for_young_humans_books)
+    insert_into_collumn(6, 'M', knig, fix_other_books[1])
 
     # "молодежи 18-35 лет"
-    for_mid_humans_books = list_of_values(int(tz['E11'].value))
-    insert_into_collumn(6, 'N', knig, for_mid_humans_books)
+    insert_into_collumn(6, 'N', knig, fix_other_books[2])
 
     ## Общее количество посещений 
     # - в стационарных условиях 
     all_visits = list_of_values(int(tz['D14'].value))
-    insert_into_collumn(5, 'U', pos, all_visits)
-
-    # - дети до 14 лет включительно
     human_14_visits = list_of_values(int(tz['D15'].value))
-    insert_into_collumn(5, 'X', pos, human_14_visits)
-
-    # Число обращений удаленных пользователей
-    request_of_delete_users = list_of_values(int(tz['D17'].value))
-    insert_into_collumn(5, 'T', pos, request_of_delete_users)
+    for_other_ages = (int(tz['D14'].value) - int(tz['D15'].value)) // 3.5
+    events_young_humans_visits = list_of_values(for_other_ages)
+    events_mid_humans_visits = list_of_values(for_other_ages)
+    events_old_humans_visits = list_of_values(for_other_ages)
 
     # "Количество посещений библиотечных мероприятий всего"
-    
     global holidays_all
     list_len = int(tz['D19'].value) + holidays_all
     len_min_events = int(tz["D21"].value) + holidays_all
-    len_lohs = (list_len - len_min_events) // 2 + holidays_all
     len_for_ev_all = list_len-len_min_events + holidays_all
 
     indexes_array = make_sorted_random_array(int(tz['D19'].value), pos)
     indexes_array1 = numpy.random.choice(indexes_array, size=int(tz['D19'].value) - int(tz['D21'].value), replace=False)
     min_indexes_array = numpy.random.choice(indexes_array, size=int(tz['D21'].value), replace=False)
-    lohs_indexes_array = numpy.random.choice(indexes_array, size=len_lohs, replace=False)
 
     if JSON_PATH.exists():
         JSON_PATH.unlink() 
 
     events_human_14_visits = list_of_values(int(tz['D24'].value), len_min_events)
     all_visits_in_events = list_of_values(int(tz['D22'].value) - int(tz['D24'].value), len_for_ev_all, True, events_human_14_visits)
+
+    # Число посещений с мероприятий
     random_insert_into_collumn(5, 'U', pos, all_visits_in_events, indexes_array1, True)
 
     # Число посещений с мероприятий детям до 14 лет
     random_insert_into_collumn(5, 'X', pos, events_human_14_visits, min_indexes_array, True, True)
 
-    # 15-17
-    for_other_ages = (int(tz['D22'].value) - int(tz['D24'].value)) // 2
+    with open(JSON_PATH, "r", encoding="utf-8") as file:
+        events = json.load(file)
+    max_count, min_count = parse_events_json(pos)
+    print(min_count)
+    print(max_count)
+    # fix_human_14_visits, new_min_count = normalization(human_14_visits, [min_count])
+    # fix_visits, new_counts = normalization(all_visits, [fix_human_14_visits, max_count])
 
-    events_young_humans_visits = list_of_values(for_other_ages, len_lohs)
-    random_insert_into_collumn(5, 'Y', pos, events_young_humans_visits, lohs_indexes_array)
+    # fix_all_visits, fix_other_visits = normalization(fix_visits, [fix_human_14_visits, events_young_humans_visits, events_mid_humans_visits])
+    human_14_visits, new_min_count = normalization(human_14_visits, [min_count])
+    max_count, new_events_visits_15_70 = reverse_normalization(max_count, [events_young_humans_visits, events_mid_humans_visits, events_old_humans_visits])
+
+    fix_all_visits, fix_other_visits = normalization(all_visits, [human_14_visits, new_events_visits_15_70[0], new_events_visits_15_70[1], new_events_visits_15_70[2]])
+    
+    
+    # Посещения
+    insert_into_collumn(5, 'U', pos, fix_all_visits)
+
+    # - дети до 14 лет включительно
+    insert_into_collumn(5, 'X', pos, fix_other_visits[0])
+
+    # 15-17
+    insert_into_collumn(5, 'Y', pos, fix_other_visits[1])
 
     # 18-35
-    events_mid_humans_visits = list_of_values(for_other_ages, len_lohs)
-    random_insert_into_collumn(5, 'Z', pos, events_mid_humans_visits, lohs_indexes_array)
+    insert_into_collumn(5, 'Z', pos, fix_other_visits[2])
+
+    # Число обращений удаленных пользователей
+    request_of_delete_users = list_of_values(int(tz['D17'].value))
+    insert_into_collumn(5, 'T', pos, request_of_delete_users)
+
 
     # ОМиЭР
     # Всего
